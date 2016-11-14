@@ -1,0 +1,44 @@
+Name: memcached
+Display-Name: Memcached (latest version)
+Cartridge-Short-Name: MEMCACHED
+Description: "Memcached is an in-memory key-value store for small chunks of arbitrary data (strings, objects) from results of database calls, API calls, or page rendering."
+Version: '1.4.33'
+Cartridge-Version: 1.0.0
+Cartridge-Vendor: tpi
+License: ASL 2.0
+Vendor: Memcached
+
+Categories:
+  - service
+  - embedded
+  - cache
+
+Website: http://www.memcached.org
+
+Cart-Data:
+  - Key: port
+    Type: cart_data
+    Description: "Memcached port"
+  - Key: connection_url
+    Type: cart_data
+    Description: "Memcached connection URL"
+
+Provides:
+  - memcached
+  - memcached-1.4
+
+Publishes:
+  publish-cache-connection-info:
+    Type: "ENV:NET_TCP:cache:connection-info"
+
+Scaling:
+  Min: 1
+  Max: 1
+
+Endpoints:
+  - Private-IP-Name:   HOST
+    Private-Port-Name: PORT
+    Private-Port:      11211
+    Public-Port-Name:  PROXY_PORT
+
+Source-Url: "https://github.com/YuriyPobezhymov/openshift-cartridge-memcached.git"

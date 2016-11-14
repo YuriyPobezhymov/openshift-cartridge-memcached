@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set +e
+rm -rf tmp/memcached
+mkdir tmp
+set -e
+
+set -x
+exec 2>&1
+version=${MEMCACHED_TAG:-1.4.20}
+binaries="../../versions/$version/bin"
+
+pushd tmp
+
+git clone https://github.com/memcached/memcached memcached
+cd memcached
+git checkout $version
+./autogen.sh
+./configure --enable-sasl --enable-sasl-pwdb
+make -j 2
+
+mkdir -p $binaries
+
+echo $(git rev-parse $version) > $binaries/.gitcommit
+for file in memcached scripts/memcached-tool; do
+  cp -f $file $binaries
+done
+
+popd
+rm -rf tmp/memcached

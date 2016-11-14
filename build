@@ -1,0 +1,57 @@
+#!/bin/bash
+
+if ! [ -d rel-eng ]; then
+	echo "Must init tito first."
+	echo "Please run 'tito init' and try again."
+	exit 1
+fi
+
+set -eu
+
+branch=master
+build=1
+publish=1
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--no-build) build=0;;
+		--no-publish) publish=0;;
+		--branch) shift; branch="$1";;
+		*) echo "invalid param: $1"
+		   echo "use: $0 [--no-build] [--no-publish] [--branch BRANCH]"
+		   exit 1
+	esac
+	shift
+done
+
+set -x
+
+_build()
+{
+	vim *.spec
+	tito tag --keep-version
+	git push --tags
+	tito build --rpm --scl=ruby193
+}
+
+if [ $build -eq 1 ]; then
+	rm -rf /tmp/tito
+	mkdir -p /tmp/tito
+
+	git checkout "$branch"
+	git pull origin "$branch"
+	_build
+
+	rm -rf dist
+	mkdir -p dist/noarch
+	cp -v /tmp/tito/noarch/*.rpm dist/noarch/
+fi
+
+if [ $publish -eq 1 ]; then
+	RELEASE_DIR="getup-openshift-origin-release-3"
+	cp -vr dist/* /mnt/getup-mirror/$RELEASE_DIR/
+	pushd /mnt/getup-mirror/$RELEASE_DIR/
+	aws s3 sync "s3://getup-mirror/$RELEASE_DIR/" . --region us-west-2
+	createrepo .
+	aws s3 rm "s3://getup-mirror/$RELEASE_DIR/repodata" --recursive
+	aws s3 sync . "s3://getup-mirror/$RELEASE_DIR/" --region us-west-2 --acl public-read
+fi

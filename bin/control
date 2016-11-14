@@ -1,0 +1,117 @@
+#!/bin/bash
+
+source $OPENSHIFT_CARTRIDGE_SDK_BASH
+export STOPTIMEOUT=20
+
+function _memcached()
+{
+	$OPENSHIFT_MEMCACHED_DIR/versions/$OPENSHIFT_MEMCACHED_VERSION/bin/memcached $@
+}
+
+function _memcached-tool()
+{
+	$OPENSHIFT_MEMCACHED_DIR/versions/$OPENSHIFT_MEMCACHED_VERSION/bin/memcached-tool $@
+}
+
+function _log() {
+	echo "$(date): $@" >> $OPENSHIFT_MEMCACHED_DIR/logs/memcached.log
+}
+
+function _read_pid() {
+	if [ -f $OPENSHIFT_MEMCACHED_DIR/pid/memcached.pid ]; then
+		echo $(<$OPENSHIFT_MEMCACHED_DIR/pid/memcached.pid)
+	fi
+}
+
+function _isrunning() {
+	local pid=`_read_pid`
+	kill -0 "$pid" 2>/dev/null || return 1
+}
+
+function _wait_start() {
+	for ((i=0; i<20; i++)); do
+		if [ -f ${OPENSHIFT_MEMCACHED_DIR}/pid/memcached.pid ]; then
+			if [ "$ENABLE_SASL" == "1" ]; then
+				return 0
+			fi
+			if _memcached-tool $OPENSHIFT_MEMCACHED_HOST:$OPENSHIFT_MEMCACHED_PORT &>/dev/null; then
+				return 0
+			fi
+		fi
+		sleep 0.5
+	done
+	return 1
+}
+
+function start() {
+	if ! _isrunning
+	then
+		source $OPENSHIFT_MEMCACHED_DIR/conf/memcached.conf
+
+		if [ "$ENABLE_SASL" == "1" ]; then
+			export MEMCACHED_SASL_PWDB=$OPENSHIFT_MEMCACHED_DIR/conf/sasldb
+			OPTIONS="$OPTIONS -S"
+		fi
+
+		_memcached -d -p $OPENSHIFT_MEMCACHED_PORT -U 0 -l $OPENSHIFT_MEMCACHED_HOST -u `id -u` -m $CACHESIZE -c $MAXCONN -P $OPENSHIFT_MEMCACHED_DIR/pid/memcached.pid $OPTIONS &>> $OPENSHIFT_MEMCACHED_DIR/logs/memcached.log
+
+		if [ $? -ne 0 ]; then
+			client_message "Memcached has failed to start"
+			_log "Memcached has failed to start"
+			cat $OPENSHIFT_MEMCACHED_DIR/logs/memcached.log >&2
+			exit 1
+		fi
+		if _wait_start; then
+			client_result "Memcached started"
+			_log "Memcached started with PID=$(_read_pid), OPTIONS=\"$OPTIONS\""
+		fi
+	else
+		client_result "Memcached already running"
+	fi
+}
+
+function stop() {
+	local pid=`_read_pid`
+
+	if [ -n "$pid" ]; then
+		if kill "$pid" 2>/dev/null; then
+			TIMEOUT="$STOPTIMEOUT"
+			while [ $TIMEOUT -gt 0 -a -f "$OPENSHIFT_MEMCACHED_DIR/pid/memcached.pid" ]; do
+				kill -0 "$pid" 2>/dev/null || break
+				sleep 1
+				let TIMEOUT=${TIMEOUT}-1
+			done
+			/bin/rm -f $OPENSHIFT_MEMCACHED_DIR/pid/memcached.pid
+			_log "Memcached stopped"
+		fi
+	else
+		if `pgrep -x memcached >/dev/null 2>&1`
+		then
+			client_message "Memcached process exists without a pid file. Use force-stop to kill."
+		else
+			client_result "Memcached already stopped"
+		fi
+	 fi
+}
+
+case "$1" in
+	start)
+		start
+	;;
+	stop)
+		stop
+	;;
+	restart)
+		stop
+		start
+	;;
+	status)
+		if _isrunning
+		then
+			client_result "Memcached is running"
+		else
+			client_result "Memcached is stopped"
+		fi
+		exit 0
+	;;
+esac
